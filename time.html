@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S1B4 - Global Time Engine</title>
+    <style>
+        :root {
+            --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #c9d1d9;
+            --header-text: #ffffff; --blue: #58a6ff; --green: #7ee787; --yellow: #f1e05a;
+            --ani: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        body.light-theme {
+            --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de; --text: #24292f;
+            --header-text: #1b1f24; --blue: #0969da; --green: #1a7f37; --yellow: #9a6700;
+        }
+
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background-color: var(--bg); color: var(--text); margin: 0;
+            display: flex; flex-direction: column; align-items: center;
+            padding: 0 15px 40px; transition: background var(--ani); overflow-y: scroll;
+            font-size: 16px;
+        }
+
+        #progress-bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--blue); z-index: 1000; }
+
+        .header {
+            position: sticky; top: 0; background: var(--bg); width: 100%;
+            z-index: 100; padding: 25px 0; text-align: center; border-bottom: 1px solid var(--border);
+            transition: background var(--ani);
+        }
+
+        .controls { position: absolute; top: 15px; right: 15px; display: flex; gap: 10px; }
+        .ctrl-btn {
+            background: var(--panel); border: 1px solid var(--border); color: var(--text);
+            padding: 8px 15px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: bold;
+            transition: var(--ani);
+        }
+        .ctrl-btn:hover { transform: scale(1.1); border-color: var(--blue); }
+
+        #main-time { font-size: clamp(3rem, 12vw, 6rem); font-weight: 800; color: var(--header-text); margin: 0; line-height: 1; transition: var(--ani); }
+        #main-time-12 { font-size: 1.4rem; color: var(--green); font-family: monospace; margin-top: 5px; }
+        #time-offset { font-size: 0.9rem; color: var(--blue); margin-top: 8px; font-weight: bold; text-transform: uppercase; }
+
+        .tabs { display: flex; gap: 8px; margin-top: 20px; justify-content: center; flex-wrap: wrap; }
+        .tab-btn {
+            background: var(--panel); border: 1px solid var(--border); color: var(--text);
+            padding: 10px 18px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: bold; text-transform: uppercase;
+            transition: var(--ani);
+        }
+        .tab-btn.active { background: var(--blue); color: #000; border-color: var(--blue); transform: translateY(-2px); }
+
+        .search-box {
+            width: 90%; max-width: 500px; background: var(--panel); border: 1px solid var(--border);
+            padding: 15px; border-radius: 10px; color: var(--text); margin-top: 20px; outline: none; font-size: 16px;
+            transition: var(--ani);
+        }
+        .search-box:focus { border-color: var(--blue); box-shadow: 0 0 15px rgba(88, 166, 255, 0.2); }
+
+        .grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 12px; width: 100%; max-width: 1200px; margin-top: 30px;
+        }
+
+        .city-card {
+            background: var(--panel); border: 1px solid var(--border); padding: 18px;
+            border-radius: 12px; display: flex; justify-content: space-between; align-items: center; 
+            cursor: pointer; transition: all 0.2s ease;
+            animation: slideUp 0.4s ease backwards; /* Анимация появления в списке */
+        }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+        .city-card:hover { border-color: var(--blue); transform: translateY(-3px); background: rgba(88, 166, 255, 0.03); }
+        .city-card.active-city { border: 2px solid var(--blue); background: rgba(88, 166, 255, 0.08); }
+
+        .time-block { text-align: right; margin-right: 15px; min-width: 80px; pointer-events: none; }
+        .t24 { font-family: monospace; color: var(--green); font-size: 1.5rem; font-weight: bold; display: block; }
+        .t12 { font-family: monospace; font-size: 0.9rem; opacity: 0.6; display: block; }
+
+        .actions { display: flex; align-items: center; gap: 10px; }
+        .copy-btn {
+            background: var(--bg); border: 1px solid var(--border); color: var(--text);
+            font-size: 11px; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold;
+            transition: 0.2s;
+        }
+        .copy-btn:hover { background: var(--blue); color: #000; transform: scale(1.05); }
+        
+        .fav-btn { background: none; border: none; cursor: pointer; font-size: 1.6rem; color: var(--border); transition: 0.2s; }
+        .fav-btn:hover { transform: scale(1.2); color: var(--yellow); }
+        .fav-btn.active { color: var(--yellow); }
+
+        #toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px);
+            background: var(--blue); color: #000; padding: 12px 24px; border-radius: 50px;
+            font-weight: bold; transition: 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 1000;
+        }
+        #toast.visible { transform: translateX(-50%) translateY(0); }
+    </style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<div id="toast">COPIED</div>
+
+<div class="header">
+    <div class="controls">
+        <button class="ctrl-btn" id="lang-btn" onclick="toggleLang()">RU</button>
+        <button class="ctrl-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
+    </div>
+    
+    <div id="main-time">00:00:00</div>
+    <div id="main-time-12">--:--:-- --</div>
+    <div id="time-offset">...</div>
+    
+    <div class="tabs" id="tabs-container"></div>
+    <input type="text" id="search" class="search-box">
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+    const i18n = {
+        ru: { russia: "🇷🇺 РФ", europe: "ЕВРОПА", asia: "АЗИЯ", america: "АМЕРИКА", fav: "⭐", search: "ПОИСК ГОРОДА...", copy: "КОПИЯ", copied: "СКОПИРОВАНО", local: "ЛОКАЛЬНО", from_you: "Ч ОТ ВАС" },
+        en: { russia: "🇷🇺 RUS", europe: "EUROPE", asia: "ASIA", america: "USA", fav: "⭐", search: "SEARCH CITY...", copy: "COPY", copied: "COPIED", local: "LOCAL", from_you: "H FROM YOU" }
+    };
+
+    let lang = localStorage.getItem('lang') || 'ru';
+    let theme = localStorage.getItem('theme') || 'dark';
+    const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let activeZone = localStorage.getItem('last_zone') || localZone;
+    let favorites = JSON.parse(localStorage.getItem('fav_v16')) || [];
+    let currentRegion = 'Russia';
+
+    const russiaZones = ["Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Asia/Yekaterinburg", "Asia/Omsk", "Asia/Novosibirsk", "Asia/Krasnoyarsk", "Asia/Irkutsk", "Asia/Yakutsk", "Asia/Vladivostok", "Asia/Magadan", "Asia/Kamchatka"];
+    const allZones = Intl.supportedValuesOf('timeZone');
+
+    function toggleLang() { lang = lang === 'ru' ? 'en' : 'ru'; localStorage.setItem('lang', lang); applyLang(); }
+    function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('theme', theme); applyTheme(); }
+    function applyTheme() { document.body.classList.toggle('light-theme', theme === 'light'); document.getElementById('theme-btn').textContent = theme === 'light' ? '☀️' : '🌙'; }
+
+    function applyLang() {
+        const t = i18n[lang];
+        document.getElementById('lang-btn').textContent = lang.toUpperCase();
+        document.getElementById('search').placeholder = t.search;
+        const tabs = [ {id: 'Russia', label: t.russia}, {id: 'Europe', label: t.europe}, {id: 'Asia', label: t.asia}, {id: 'America', label: t.america}, {id: 'Favorites', label: t.fav} ];
+        document.getElementById('tabs-container').innerHTML = tabs.map(tab => `<button class="tab-btn ${currentRegion === tab.id ? 'active' : ''}" onclick="setRegion('${tab.id}', this)">${tab.label}</button>`).join('');
+        render(document.getElementById('search').value);
+    }
+
+    function setRegion(reg, btn) { 
+        currentRegion = reg; 
+        applyLang(); 
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+
+    function update() {
+        const now = new Date();
+        const t = i18n[lang];
+        document.getElementById('main-time').textContent = now.toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-GB', { timeZone: activeZone });
+        document.getElementById('main-time-12').textContent = now.toLocaleTimeString('en-US', { timeZone: activeZone, hour12: true });
+        
+        const local = new Date(now.toLocaleString('en-US', {timeZone: localZone}));
+        const target = new Date(now.toLocaleString('en-US', {timeZone: activeZone}));
+        const diff = Math.round((target - local) / 3600000);
+        document.getElementById('time-offset').textContent = diff === 0 ? t.local : `${diff > 0 ? '+' : ''}${diff}${t.from_you}`;
+        document.getElementById('progress-bar').style.width = (now.getSeconds() / 60 * 100) + '%';
+
+        const blocks = document.getElementsByClassName('time-block');
+        for(let b of blocks) {
+            const z = b.dataset.z;
+            b.querySelector('.t24').textContent = now.toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-GB', { timeZone: z, hour: '2-digit', minute: '2-digit' });
+            b.querySelector('.t12').textContent = now.toLocaleTimeString('en-US', { timeZone: z, hour12: true, hour: '2-digit', minute: '2-digit' });
+        }
+    }
+
+    function render(query = "") {
+        let list;
+        const q = query.toLowerCase();
+        if (q) list = allZones.filter(z => z.toLowerCase().includes(q));
+        else if (currentRegion === 'Favorites') list = favorites;
+        else if (currentRegion === 'Russia') list = russiaZones;
+        else list = allZones.filter(z => z.startsWith(currentRegion));
+
+        document.getElementById('grid').innerHTML = list.map((z, i) => {
+            const city = z.split('/').pop().replace(/_/g, ' ').toUpperCase();
+            return `
+                <div class="city-card ${z === activeZone ? 'active-city' : ''}" 
+                     data-id="${z}" 
+                     style="animation-delay: ${i * 0.02}s" 
+                     onclick="setActiveCity('${z}')">
+                    <div style="flex:1">
+                        <div style="font-weight:bold; font-size:16px;">${city}</div>
+                        <div style="font-size:11px; color:var(--blue); opacity:0.7; margin-top:4px;">${z.toUpperCase()}</div>
+                    </div>
+                    <div class="actions">
+                        <div class="time-block" data-z="${z}"><span class="t24">..:..</span><span class="t12">..:..</span></div>
+                        <button class="copy-btn" onclick="event.stopPropagation(); copyTime('${z}', '${city}')">${i18n[lang].copy}</button>
+                        <button class="fav-btn ${favorites.includes(z)?'active':''}" onclick="event.stopPropagation(); toggleFav('${z}')">★</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        update();
+    }
+
+    function setActiveCity(z) {
+        // Мгновенная смена класса БЕЗ перезагрузки всей сетки (убирает мерцание)
+        document.querySelectorAll('.city-card').forEach(c => c.classList.remove('active-city'));
+        const activeCard = document.querySelector(`[data-id="${z}"]`);
+        if(activeCard) activeCard.classList.add('active-city');
+        
+        activeZone = z;
+        localStorage.setItem('last_zone', z);
+        update();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+
+    function copyTime(z, city) {
+        const time = new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-GB', {timeZone: z});
+        navigator.clipboard.writeText(time);
+        const toast = document.getElementById('toast');
+        toast.textContent = `${i18n[lang].copied}: ${time}`;
+        toast.classList.add('visible');
+        setTimeout(() => toast.classList.remove('visible'), 1500);
+    }
+
+    function toggleFav(z) {
+        favorites = favorites.includes(z) ? favorites.filter(f => f !== z) : [...favorites, z];
+        localStorage.setItem('fav_v16', JSON.stringify(favorites));
+        render(document.getElementById('search').value);
+    }
+
+    setInterval(update, 1000);
+    applyTheme();
+    applyLang();
+</script>
+</body>
+</html>
